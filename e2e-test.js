@@ -87,6 +87,20 @@ async function run() {
             name: 'Customer User',
             password: 'password123'
         });
+
+        // Fetch and verify OTP for customer
+        const otpRecord = await prisma.otpCode.findFirst({
+            where: { phone_number: customerPhone },
+            orderBy: { created_at: 'desc' }
+        });
+
+        if (otpRecord) {
+            await request('/auth/verify-otp', 'POST', {
+                phone_number: customerPhone,
+                otp_code: otpRecord.otp_code
+            });
+        }
+
         res = await request('/auth/login', 'POST', { phone_number: customerPhone, password: 'password123' });
         customerToken = res.data?.data?.token;
         console.log(`[Customer Setup] ${customerToken ? '✅' : '❌'} - Token retrieved`);
