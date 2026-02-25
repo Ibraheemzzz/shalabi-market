@@ -34,7 +34,7 @@ src/
 │   ├── validate.middleware.js  # express-validator error formatter
 │   └── rateLimit.middleware.js # loginLimiter · registerLimiter · guestLimiter · apiLimiter · uploadLimiter
 ├── modules/
-│   ├── auth/               # register · login · logout · guest · me
+│   ├── auth/               # register · login · logout · guest · me · OTP verify
 │   ├── users/              # profile · admin user management
 │   ├── products/           # CRUD + search + filters
 │   ├── categories/         # CRUD
@@ -45,7 +45,8 @@ src/
 │   └── reports/            # admin analytics
 └── utils/
     ├── response.js         # Unified JSON response helpers
-    └── pagination.js       # Cursor/offset pagination
+    ├── pagination.js       # Cursor/offset pagination
+    └── sms.js              # Mock SMS service (OTP delivery)
 ```
 
 ---
@@ -85,9 +86,18 @@ Authorization: Bearer <jwt_token>
 
 | Role | Description |
 |---|---|
-| `Customer` | Registered user — full shopping access |
+| `Customer` | Registered & verified user — full shopping access |
 | `Admin` | Full platform management |
-| `Guest` | Temporary session — browse & cart only |
+| `Guest` | Temporary session — browse & order without account |
+
+### OTP Verification Flow
+
+New users must verify their phone number before gaining access:
+
+1. `POST /api/auth/register` → Account created with `is_verified: false`, OTP sent via SMS
+2. `POST /api/auth/verify-otp` → Verify the 6-digit code → JWT token issued
+3. `POST /api/auth/resend-otp` → Request a new code if the previous one expired (5 min TTL)
+4. `POST /api/auth/login` → Blocked until account is verified
 
 ---
 
@@ -108,13 +118,15 @@ Authorization: Bearer <jwt_token>
 ## 📋 API Endpoints
 
 ### Auth
-| Method | Endpoint | Access |
-|---|---|---|
-| POST | `/api/auth/register` | Public |
-| POST | `/api/auth/login` | Public |
-| POST | `/api/auth/logout` | Private |
-| POST | `/api/auth/guest` | Public |
-| GET | `/api/auth/me` | Private |
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| POST | `/api/auth/register` | Public | Register + send OTP |
+| POST | `/api/auth/verify-otp` | Public | Verify OTP → get token |
+| POST | `/api/auth/resend-otp` | Public | Resend expired OTP |
+| POST | `/api/auth/login` | Public | Login (verified only) |
+| POST | `/api/auth/logout` | Private | Logout |
+| POST | `/api/auth/guest` | Public | Guest session |
+| GET | `/api/auth/me` | Private | Current user info |
 
 ### Products
 | Method | Endpoint | Access |
