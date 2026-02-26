@@ -1,59 +1,113 @@
 const express = require('express');
 const router = express.Router();
 const reportsController = require('./reports.controller');
-const { authenticate, requireAdmin } = require('../../middlewares/auth.middleware');
+const { authenticate, requirePermission } = require('../../middlewares/auth.middleware');
 
 /**
- * Reports Routes (Admin Only)
+ * @swagger
+ * /api/admin/reports/dashboard-summary:
+ *   get:
+ *     summary: ملخص لوحة التحكم
+ *     description: "طلبات اليوم، الإيرادات، المخزون المنخفض، المستخدمين الجدد"
+ *     tags: [Admin - Reports]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: ملخص اليوم
+ *       403:
+ *         description: "صلاحية مطلوبة: report.view"
  */
+router.get('/reports/dashboard-summary', authenticate, requirePermission('report.view'), reportsController.getDashboardSummary);
 
 /**
- * @route   GET /api/admin/reports/dashboard-summary
- * @desc    Get dashboard summary (today's orders, revenue, low stock, new users)
- * @access  Private (admin only)
+ * @swagger
+ * /api/admin/reports/sales:
+ *   get:
+ *     summary: تقرير المبيعات
+ *     tags: [Admin - Reports]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [daily, weekly, monthly]
+ *     responses:
+ *       200:
+ *         description: بيانات المبيعات
  */
-router.get('/reports/dashboard-summary', authenticate, requireAdmin, reportsController.getDashboardSummary);
+router.get('/reports/sales', authenticate, requirePermission('report.view'), reportsController.getSalesReport);
 
 /**
- * @route   GET /api/admin/reports/sales
- * @desc    Get sales report grouped by period
- * @access  Private (admin only)
+ * @swagger
+ * /api/admin/reports/top-products:
+ *   get:
+ *     summary: المنتجات الأكثر مبيعاً
+ *     tags: [Admin - Reports]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: قائمة المنتجات الأكثر مبيعاً
  */
-router.get('/reports/sales', authenticate, requireAdmin, reportsController.getSalesReport);
+router.get('/reports/top-products', authenticate, requirePermission('report.view'), reportsController.getTopProducts);
 
 /**
- * @route   GET /api/admin/reports/top-products
- * @desc    Get top selling products by quantity
- * @access  Private (admin only)
+ * @swagger
+ * /api/admin/reports/low-stock:
+ *   get:
+ *     summary: المنتجات منخفضة المخزون
+ *     tags: [Admin - Reports]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: منتجات تحتاج إعادة تخزين
  */
-router.get('/reports/top-products', authenticate, requireAdmin, reportsController.getTopProducts);
+router.get('/reports/low-stock', authenticate, requirePermission('report.view'), reportsController.getLowStockProducts);
 
 /**
- * @route   GET /api/admin/reports/low-stock
- * @desc    Get products below stock threshold
- * @access  Private (admin only)
+ * @swagger
+ * /api/admin/reports/profit:
+ *   get:
+ *     summary: تقرير الأرباح
+ *     tags: [Admin - Reports]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: بيانات الأرباح
  */
-router.get('/reports/low-stock', authenticate, requireAdmin, reportsController.getLowStockProducts);
+router.get('/reports/profit', authenticate, requirePermission('report.view'), reportsController.getProfitReport);
 
 /**
- * @route   GET /api/admin/reports/profit
- * @desc    Get profit report grouped by period
- * @access  Private (admin only)
+ * @swagger
+ * /api/admin/reports/category-sales:
+ *   get:
+ *     summary: المبيعات حسب التصنيف
+ *     tags: [Admin - Reports]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: توزيع المبيعات على التصنيفات
  */
-router.get('/reports/profit', authenticate, requireAdmin, reportsController.getProfitReport);
+router.get('/reports/category-sales', authenticate, requirePermission('report.view'), reportsController.getCategorySales);
 
 /**
- * @route   GET /api/admin/reports/category-sales
- * @desc    Get sales breakdown by category
- * @access  Private (admin only)
+ * @swagger
+ * /api/admin/reports/order-status:
+ *   get:
+ *     summary: توزيع حالات الطلبات
+ *     tags: [Admin - Reports]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: إحصائية حالات الطلبات
  */
-router.get('/reports/category-sales', authenticate, requireAdmin, reportsController.getCategorySales);
-
-/**
- * @route   GET /api/admin/reports/order-status
- * @desc    Get order status distribution
- * @access  Private (admin only)
- */
-router.get('/reports/order-status', authenticate, requireAdmin, reportsController.getOrderStatusDistribution);
+router.get('/reports/order-status', authenticate, requirePermission('report.view'), reportsController.getOrderStatusDistribution);
 
 module.exports = router;

@@ -248,17 +248,44 @@ const verifyOtp = async (phone_number, otp_code) => {
     throw new Error('Invalid or expired OTP code');
   }
 
-  // Mark OTP as used and update user as verified in a transaction
-  await prisma.$transaction([
-    prisma.otpCode.update({
+  // Mark OTP as used, update user as verified, and migrate guest orders in a transaction
+  await prisma.$transaction(async (tx) => {
+    // 1. Mark OTP as used
+    await tx.otpCode.update({
       where: { otp_id: otpRecord.otp_id },
       data: { is_used: true }
-    }),
-    prisma.user.update({
+    });
+
+    // 2. Update user as verified
+    await tx.user.update({
       where: { user_id: user.user_id },
       data: { is_verified: true, last_login_date: new Date() }
-    })
-  ]);
+    });
+
+    // 3. Migrate Guest Orders
+    // Check if there is a guest with the same phone number
+    const guest = await tx.guest.findFirst({
+      where: { phone_number }
+    });
+
+    if (guest) {
+      // Find orders belonging to this guest
+      const guestOrders = await tx.order.findMany({
+        where: { guest_id: guest.guest_id }
+      });
+
+      if (guestOrders.length > 0) {
+        // Update all these orders to belong to the new user instead of the guest
+        await tx.order.updateMany({
+          where: { guest_id: guest.guest_id },
+          data: {
+            guest_id: null,
+            user_id: user.user_id
+          }
+        });
+      }
+    }
+  });
 
   // Generate JWT token
   const token = generateToken(user.user_id, user.role);
@@ -308,6 +335,137 @@ const resendOtp = async (phone_number) => {
   return { message: 'A new OTP has been sent to your phone number.' };
 };
 
+/**
+ * Check if phone number exists (Step 1 of two-step login)
+ * @param {string} phone_number - User's phone number
+ * @returns {Object} Phone check result
+ */
+const checkPhone = async (phone_number) => {
+  const user = await prisma.user.findUnique({
+    where: { phone_number },
+    select: { name: true, is_verified: true, is_active: true, phone_number: true }
+  });
+
+  if (!user) {
+    throw new Error('PHONE_NOT_FOUND');
+  }
+
+  if (!user.is_active) {
+    throw new Error('ACCOUNT_DEACTIVATED');
+  }
+
+  if (!user.is_verified) {
+    // Auto-resend OTP for unverified accounts
+    const otp_code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires_at = new Date(Date.now() + 5 * 60 * 1000);
+
+    await prisma.otpCode.create({
+      data: { phone_number, otp_code, expires_at }
+    });
+
+    await smsService.sendOTP(phone_number, otp_code);
+
+    throw new Error('ACCOUNT_NOT_VERIFIED');
+  }
+
+  return { exists: true, name: user.name };
+};
+
+/**
+ * Forgot password — sends OTP to phone for password reset
+ * @param {string} phone_number
+ */
+const forgotPassword = async (phone_number) => {
+  const user = await prisma.user.findUnique({
+    where: { phone_number },
+    select: { is_verified: true, is_active: true }
+  });
+
+  if (!user) {
+    throw new Error('PHONE_NOT_FOUND');
+  }
+  if (!user.is_active) {
+    throw new Error('ACCOUNT_DEACTIVATED');
+  }
+  if (!user.is_verified) {
+    throw new Error('ACCOUNT_NOT_VERIFIED');
+  }
+
+  const otp_code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expires_at = new Date(Date.now() + 5 * 60 * 1000);
+
+  await prisma.otpCode.create({
+    data: { phone_number, otp_code, expires_at }
+  });
+
+  await smsService.sendOTP(phone_number, otp_code);
+
+  return { message: 'تم إرسال رمز التحقق لإعادة تعيين كلمة المرور' };
+};
+
+/**
+ * Verify OTP code for password reset without consuming it
+ * @param {string} phone_number
+ * @param {string} otp_code
+ */
+const verifyResetOtp = async (phone_number, otp_code) => {
+  const otpRecord = await prisma.otpCode.findFirst({
+    where: {
+      phone_number,
+      otp_code,
+      is_used: false,
+      expires_at: { gt: new Date() }
+    },
+    orderBy: { created_at: 'desc' }
+  });
+
+  if (!otpRecord) {
+    throw new Error('INVALID_OTP');
+  }
+
+  return { valid: true };
+};
+
+/**
+ * Reset password using OTP
+ * @param {string} phone_number
+ * @param {string} otp_code
+ * @param {string} new_password
+ */
+const resetPassword = async (phone_number, otp_code, new_password) => {
+  // Verify OTP
+  const otpRecord = await prisma.otpCode.findFirst({
+    where: {
+      phone_number,
+      otp_code,
+      is_used: false,
+      expires_at: { gt: new Date() }
+    },
+    orderBy: { created_at: 'desc' }
+  });
+
+  if (!otpRecord) {
+    throw new Error('INVALID_OTP');
+  }
+
+  // Mark OTP as used
+  await prisma.otpCode.update({
+    where: { otp_id: otpRecord.otp_id },
+    data: { is_used: true }
+  });
+
+  // Hash new password and update
+  const saltRounds = 10;
+  const password_hash = await bcrypt.hash(new_password, saltRounds);
+
+  await prisma.user.update({
+    where: { phone_number },
+    data: { password_hash }
+  });
+
+  return { message: 'تم تغيير كلمة المرور بنجاح' };
+};
+
 module.exports = {
   register,
   verifyOtp,
@@ -317,5 +475,9 @@ module.exports = {
   createGuest,
   generateToken,
   generateGuestToken,
-  verifyUser
+  verifyUser,
+  checkPhone,
+  forgotPassword,
+  verifyResetOtp,
+  resetPassword
 };

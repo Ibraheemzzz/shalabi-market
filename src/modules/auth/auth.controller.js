@@ -103,7 +103,7 @@ const createGuest = async (req, res) => {
 /**
  * Get current user info
  * GET /api/auth/me
- * Protected route
+ * Protected route — returns user info + permissions
  */
 const getCurrentUser = async (req, res) => {
   try {
@@ -112,17 +112,27 @@ const getCurrentUser = async (req, res) => {
     if (user.role === 'Guest') {
       return successResponse(res, {
         guest_id: user.guest_id,
-        role: 'Guest'
+        role: 'Guest',
+        permissions: []
       }, 'Guest user');
     }
 
     const userInfo = await authService.verifyUser(user.user_id);
 
+    // Load permissions for this role
+    const prisma = require('../../config/prisma');
+    const rolePerms = await prisma.rolePermission.findMany({
+      where: { role: userInfo.role },
+      include: { permission: { select: { code: true } } }
+    });
+    const permissions = rolePerms.map(rp => rp.permission.code);
+
     return successResponse(res, {
       user_id: userInfo.user_id,
       phone_number: userInfo.phone_number,
       name: userInfo.name,
-      role: userInfo.role
+      role: userInfo.role,
+      permissions
     }, 'User info retrieved');
   } catch (error) {
     logger.error('Get current user error:', { error: error.message, stack: error.stack });
@@ -173,6 +183,92 @@ const resendOtp = async (req, res) => {
   }
 };
 
+/**
+ * Check phone number (Step 1 of two-step login)
+ * POST /api/auth/check-phone
+ */
+const checkPhone = async (req, res) => {
+  try {
+    const { phone_number } = req.body;
+
+    const result = await authService.checkPhone(phone_number);
+
+    return successResponse(res, result, 'Phone number found');
+  } catch (error) {
+    if (error.message === 'PHONE_NOT_FOUND') {
+      return errorResponse(res, 'رقم الهاتف غير مسجّل', 404);
+    }
+    if (error.message === 'ACCOUNT_DEACTIVATED') {
+      return errorResponse(res, 'الحساب معطّل. تواصل مع الدعم.', 403);
+    }
+    if (error.message === 'ACCOUNT_NOT_VERIFIED') {
+      return errorResponse(res, 'الحساب غير مؤكد. تم إرسال رمز تحقق جديد.', 403, { needs_verification: true, phone_number: req.body.phone_number });
+    }
+    logger.error('Check phone error:', { error: error.message, stack: error.stack });
+    return serverErrorResponse(res, 'Failed to check phone number');
+  }
+};
+
+/**
+ * Forgot password — send OTP for reset
+ * POST /api/auth/forgot-password
+ */
+const forgotPassword = async (req, res) => {
+  try {
+    const { phone_number } = req.body;
+    const result = await authService.forgotPassword(phone_number);
+    return successResponse(res, null, result.message);
+  } catch (error) {
+    if (error.message === 'PHONE_NOT_FOUND') {
+      return errorResponse(res, 'رقم الهاتف غير مسجّل', 404);
+    }
+    if (error.message === 'ACCOUNT_DEACTIVATED') {
+      return errorResponse(res, 'الحساب معطّل. تواصل مع الدعم.', 403);
+    }
+    if (error.message === 'ACCOUNT_NOT_VERIFIED') {
+      return errorResponse(res, 'الحساب غير مؤكد. يرجى تأكيد حسابك أولاً.', 403);
+    }
+    logger.error('Forgot password error:', { error: error.message, stack: error.stack });
+    return serverErrorResponse(res, 'Failed to process forgot password request');
+  }
+};
+
+/**
+ * Verify OTP code for password reset
+ * POST /api/auth/verify-reset-otp
+ */
+const verifyResetOtp = async (req, res) => {
+  try {
+    const { phone_number, otp_code } = req.body;
+    await authService.verifyResetOtp(phone_number, otp_code);
+    return successResponse(res, null, 'OTP is valid');
+  } catch (error) {
+    if (error.message === 'INVALID_OTP') {
+      return errorResponse(res, 'رمز التحقق غير صحيح أو منتهي الصلاحية', 400);
+    }
+    logger.error('Verify reset OTP error:', { error: error.message, stack: error.stack });
+    return serverErrorResponse(res, 'Failed to verify OTP');
+  }
+};
+
+/**
+ * Reset password using OTP
+ * POST /api/auth/reset-password
+ */
+const resetPassword = async (req, res) => {
+  try {
+    const { phone_number, otp_code, new_password } = req.body;
+    const result = await authService.resetPassword(phone_number, otp_code, new_password);
+    return successResponse(res, null, result.message);
+  } catch (error) {
+    if (error.message === 'INVALID_OTP') {
+      return errorResponse(res, 'رمز التحقق غير صحيح أو منتهي الصلاحية', 400);
+    }
+    logger.error('Reset password error:', { error: error.message, stack: error.stack });
+    return serverErrorResponse(res, 'Failed to reset password');
+  }
+};
+
 module.exports = {
   register,
   verifyOtp,
@@ -180,5 +276,9 @@ module.exports = {
   login,
   logout,
   createGuest,
-  getCurrentUser
+  getCurrentUser,
+  checkPhone,
+  forgotPassword,
+  verifyResetOtp,
+  resetPassword
 };

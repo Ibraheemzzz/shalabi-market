@@ -3,14 +3,57 @@ const router = express.Router();
 const productsController = require('./products.controller');
 
 /**
- * Public Products Routes
- * Mounted at: /api/products
+ * @swagger
+ * /api/products:
+ *   get:
+ *     summary: عرض المنتجات (عام)
+ *     tags: [Products]
+ *     parameters:
+ *       - in: query
+ *         name: category_id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [price_asc, price_desc, newest, popular]
+ *     responses:
+ *       200:
+ *         description: قائمة المنتجات مع pagination
  */
-
-// GET /api/products      → list products (public)
 router.get('/', productsController.getProducts);
 
-// GET /api/products/:id  → single product (public)
+/**
+ * @swagger
+ * /api/products/{id}:
+ *   get:
+ *     summary: تفاصيل منتج محدد
+ *     tags: [Products]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: بيانات المنتج
+ *       404:
+ *         description: المنتج غير موجود
+ */
 router.get('/:id', productsController.getProductById);
 
 module.exports = router;

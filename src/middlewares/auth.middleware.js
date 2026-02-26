@@ -18,20 +18,20 @@ const authenticate = async (req, res, next) => {
   try {
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return unauthorizedResponse(res, 'Authorization token is required');
     }
 
     const token = authHeader.split(' ')[1];
-    
+
     if (!token) {
       return unauthorizedResponse(res, 'Authorization token is required');
     }
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     // Attach user/guest info to request
     if (decoded.guest_id) {
       // Guest user — no DB check needed, guests are stateless
@@ -82,21 +82,21 @@ const authenticate = async (req, res, next) => {
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       req.user = null;
       return next();
     }
 
     const token = authHeader.split(' ')[1];
-    
+
     if (!token) {
       req.user = null;
       return next();
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     if (decoded.guest_id) {
       req.user = {
         id: decoded.guest_id,
@@ -137,9 +137,9 @@ const requireAdmin = (req, res, next) => {
   if (!req.user) {
     return unauthorizedResponse(res, 'Authentication required');
   }
-  
-  if (req.user.role !== 'Admin') {
-    return forbiddenResponse(res, 'Admin access required');
+
+  if (req.user.role !== 'SuperAdmin') {
+    return forbiddenResponse(res, 'SuperAdmin access required');
   }
 
   next();
@@ -154,7 +154,7 @@ const requireCustomer = (req, res, next) => {
   if (!req.user) {
     return unauthorizedResponse(res, 'Authentication required');
   }
-  
+
   if (req.user.role === 'Guest') {
     return forbiddenResponse(res, 'Registered user account required');
   }
@@ -170,7 +170,7 @@ const requireUser = (req, res, next) => {
   if (!req.user) {
     return unauthorizedResponse(res, 'Authentication required');
   }
-  
+
   if (req.user.role === 'Guest') {
     return forbiddenResponse(res, 'Please login to access this feature');
   }
@@ -198,13 +198,83 @@ const requireRoles = (...roles) => {
     if (!req.user) {
       return unauthorizedResponse(res, 'Authentication required');
     }
-    
+
     if (!roles.includes(req.user.role)) {
       return forbiddenResponse(res, 'Insufficient permissions');
     }
 
     next();
   };
+};
+
+// ─── Permission-based authorization (RBAC) ────────────────────────────────────
+
+// In-memory cache: { role: { permissions: [...], cachedAt: timestamp } }
+const permissionCache = {};
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Load permissions for a role (with caching)
+ */
+const getPermissionsForRole = async (role) => {
+  const cached = permissionCache[role];
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
+    return cached.permissions;
+  }
+
+  const rolePerms = await prisma.rolePermission.findMany({
+    where: { role },
+    include: { permission: { select: { code: true } } }
+  });
+
+  const permissions = rolePerms.map(rp => rp.permission.code);
+  permissionCache[role] = { permissions, cachedAt: Date.now() };
+  return permissions;
+};
+
+/**
+ * Permission-based authorization middleware
+ * Checks if user's role has the required permission(s)
+ * @param  {...string} requiredPermissions - One or more permission codes (user needs at least one)
+ */
+const requirePermission = (...requiredPermissions) => {
+  return async (req, res, next) => {
+    if (!req.user) {
+      return unauthorizedResponse(res, 'Authentication required');
+    }
+
+    if (req.user.role === 'Guest') {
+      return forbiddenResponse(res, 'Registered user account required');
+    }
+
+    try {
+      const userPermissions = await getPermissionsForRole(req.user.role);
+
+      // User needs at least ONE of the required permissions
+      const hasPermission = requiredPermissions.some(p => userPermissions.includes(p));
+
+      if (!hasPermission) {
+        return forbiddenResponse(res, 'ليس لديك صلاحية للقيام بهذا الإجراء');
+      }
+
+      // Attach permissions to request for optional use in controllers
+      req.permissions = userPermissions;
+      next();
+    } catch (error) {
+      return forbiddenResponse(res, 'Permission check failed');
+    }
+  };
+};
+
+/**
+ * Clear permission cache (useful after role changes)
+ */
+const clearPermissionCache = (role) => {
+  if (role) {
+    delete permissionCache[role];
+  } else {
+    Object.keys(permissionCache).forEach(k => delete permissionCache[k]);
+  }
 };
 
 module.exports = {
@@ -214,5 +284,7 @@ module.exports = {
   requireCustomer,
   requireUser,
   allowGuestOrUser,
-  requireRoles
+  requireRoles,
+  requirePermission,
+  clearPermissionCache
 };

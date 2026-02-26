@@ -5,13 +5,6 @@ const { authenticate, requireUser } = require('../../middlewares/auth.middleware
 const { validate } = require('../../middlewares/validate.middleware');
 const { param } = require('express-validator');
 
-/**
- * Wishlist Routes
- */
-
-/**
- * Wishlist param validation
- */
 const productIdParam = [
   param('productId')
     .isInt({ min: 1 })
@@ -19,45 +12,96 @@ const productIdParam = [
 ];
 
 /**
- * @route   GET /api/wishlist
- * @desc    Get user's wishlist
- * @access  Private (registered users only)
+ * @swagger
+ * /api/wishlist:
+ *   get:
+ *     summary: عرض قائمة الأمنيات
+ *     tags: [Wishlist]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: قائمة المنتجات المفضلة
+ *   delete:
+ *     summary: تفريغ قائمة الأمنيات
+ *     tags: [Wishlist]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: تم التنظيف
  */
 router.get('/', authenticate, requireUser, wishlistController.getWishlist);
+router.delete('/', authenticate, requireUser, wishlistController.clearWishlist);
 
 /**
- * @route   GET /api/wishlist/:productId
- * @desc    Check if product is in wishlist
- * @access  Private (registered users only)
+ * @swagger
+ * /api/wishlist/{productId}:
+ *   get:
+ *     summary: هل المنتج في قائمة الأمنيات؟
+ *     tags: [Wishlist]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: حالة التواجد
+ *   post:
+ *     summary: إضافة منتج لقائمة الأمنيات
+ *     tags: [Wishlist]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       201:
+ *         description: تم الإضافة
+ *   delete:
+ *     summary: إزالة منتج من قائمة الأمنيات
+ *     tags: [Wishlist]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: تم الحذف
  */
 router.get('/:productId', authenticate, requireUser, productIdParam, validate, wishlistController.checkWishlist);
-
-/**
- * @route   POST /api/wishlist/:productId
- * @desc    Add product to wishlist
- * @access  Private (registered users only)
- */
 router.post('/:productId', authenticate, requireUser, productIdParam, validate, wishlistController.addToWishlist);
-
-/**
- * @route   DELETE /api/wishlist/:productId
- * @desc    Remove product from wishlist
- * @access  Private (registered users only)
- */
 router.delete('/:productId', authenticate, requireUser, productIdParam, validate, wishlistController.removeFromWishlist);
 
 /**
- * @route   PATCH /api/wishlist/:productId/toggle
- * @desc    Toggle product in wishlist (add if not present, remove if present)
- * @access  Private (registered users only)
+ * @swagger
+ * /api/wishlist/{productId}/toggle:
+ *   patch:
+ *     summary: تبديل حالة المنتج في قائمة الأمنيات (إضافة/حذف)
+ *     tags: [Wishlist]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: تم التبديل بنجاح
  */
 router.patch('/:productId/toggle', authenticate, requireUser, productIdParam, validate, wishlistController.toggleWishlist);
-
-/**
- * @route   DELETE /api/wishlist
- * @desc    Clear entire wishlist
- * @access  Private (registered users only)
- */
-router.delete('/', authenticate, requireUser, wishlistController.clearWishlist);
 
 module.exports = router;

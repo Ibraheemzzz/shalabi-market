@@ -19,7 +19,7 @@ const logger = require('../../config/logger');
  */
 const getCart = async (req, res) => {
   try {
-    const user_id = req.user.user_id;
+    const user_id = req.user.user_id || req.user.guest_id;
 
     const cart = await cartService.getCart(user_id);
 
@@ -37,7 +37,7 @@ const getCart = async (req, res) => {
  */
 const addToCart = async (req, res) => {
   try {
-    const user_id = req.user.user_id;
+    const user_id = req.user.user_id || req.user.guest_id;
     const { product_id, quantity } = req.body;
 
     // Validate required fields
@@ -65,9 +65,9 @@ const addToCart = async (req, res) => {
     if (error.message === 'Product not found or unavailable') {
       return notFoundResponse(res, 'Product');
     }
-    if (error.message.startsWith('Insufficient stock') || 
-        error.message === 'Quantity must be greater than 0' ||
-        error.message.startsWith('Maximum quantity')) {
+    if (error.message.startsWith('Insufficient stock') ||
+      error.message === 'Quantity must be greater than 0' ||
+      error.message.startsWith('Maximum quantity')) {
       return errorResponse(res, error.message, 400);
     }
     logger.error('Add to cart error:', { error: error.message, stack: error.stack });
@@ -82,7 +82,7 @@ const addToCart = async (req, res) => {
  */
 const updateCartItem = async (req, res) => {
   try {
-    const user_id = req.user.user_id;
+    const user_id = req.user.user_id || req.user.guest_id;
     const { productId } = req.params;
     const { quantity } = req.body;
 
@@ -118,7 +118,7 @@ const updateCartItem = async (req, res) => {
  */
 const removeFromCart = async (req, res) => {
   try {
-    const user_id = req.user.user_id;
+    const user_id = req.user.user_id || req.user.guest_id;
     const { productId } = req.params;
 
     // Validate product_id
@@ -145,7 +145,7 @@ const removeFromCart = async (req, res) => {
  */
 const clearCart = async (req, res) => {
   try {
-    const user_id = req.user.user_id;
+    const user_id = req.user.user_id || req.user.guest_id;
 
     const result = await cartService.clearCart(user_id);
 
@@ -166,7 +166,7 @@ const clearCart = async (req, res) => {
  */
 const validateCart = async (req, res) => {
   try {
-    const user_id = req.user.user_id;
+    const user_id = req.user.user_id || req.user.guest_id;
 
     const result = await cartService.validateCart(user_id);
 

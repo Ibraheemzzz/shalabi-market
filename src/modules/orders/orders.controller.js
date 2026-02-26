@@ -21,7 +21,15 @@ const logger = require('../../config/logger');
 const placeOrder = async (req, res) => {
   try {
     const user = req.user;
-    const { items, shipping_city, shipping_street, shipping_building, shipping_phone } = req.body;
+    const {
+      items,
+      address_id,
+      first_name,
+      last_name,
+      region,
+      street,
+      phone_number
+    } = req.body;
 
     // Prepare order data
     const orderData = {
@@ -29,10 +37,12 @@ const placeOrder = async (req, res) => {
         product_id: parseInt(item.product_id),
         quantity: parseFloat(item.quantity)
       })),
-      shipping_city,
-      shipping_street,
-      shipping_building,
-      shipping_phone
+      address_id: address_id ? parseInt(address_id) : undefined,
+      first_name,
+      last_name,
+      region,
+      street,
+      phone_number
     };
 
     // Set user_id or guest_id based on user type
@@ -58,8 +68,8 @@ const placeOrder = async (req, res) => {
     if (error.message.startsWith('Insufficient stock')) {
       return errorResponse(res, error.message, 400);
     }
-    if (error.message === 'Order must contain at least one item' || 
-        error.message === 'Either user_id or guest_id must be provided, but not both') {
+    if (error.message === 'Order must contain at least one item' ||
+      error.message === 'Either user_id or guest_id must be provided, but not both') {
       return errorResponse(res, error.message, 400);
     }
     logger.error('Place order error', { error: error.message, stack: error.stack });
@@ -151,6 +161,27 @@ const cancelOrder = async (req, res) => {
 };
 
 /**
+ * Admin: Get order by ID
+ * GET /api/admin/orders/:id
+ */
+const getAdminOrderById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || isNaN(parseInt(id))) {
+      return errorResponse(res, 'Invalid order ID', 400);
+    }
+    const order = await ordersService.getOrderById(parseInt(id), null, null);
+    return successResponse(res, order, 'Order retrieved successfully');
+  } catch (error) {
+    if (error.message === 'Order not found') {
+      return notFoundResponse(res, 'Order');
+    }
+    logger.error('Get admin order error:', { error: error.message, stack: error.stack });
+    return serverErrorResponse(res, 'Failed to get order');
+  }
+};
+
+/**
  * Get all orders (admin only)
  * GET /api/admin/orders/all
  */
@@ -159,7 +190,7 @@ const getAllOrders = async (req, res) => {
     const { status, page, limit } = req.query;
 
     // Validate status if provided
-    if (status && !['Created', 'Shipped', 'Delivered', 'Cancelled'].includes(status)) {
+    if (status && !['Created', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'].includes(status)) {
       return errorResponse(res, 'Invalid status', 400);
     }
 
@@ -204,7 +235,35 @@ const changeOrderStatus = async (req, res) => {
       return errorResponse(res, error.message, 400);
     }
     logger.error('Change order status error:', { error: error.message, stack: error.stack });
-    return serverErrorResponse(res, 'Failed to change order status');
+    return errorResponse(res, error.message || 'Failed to change order status', 400);
+  }
+};
+
+/**
+ * Get guest invoice by order ID and phone number
+ * GET /api/orders/guest-invoice/:id?phone=...
+ */
+const getGuestInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const phone = req.query.phone || req.body.phone;
+
+    if (!id || isNaN(parseInt(id))) {
+      return errorResponse(res, 'Invalid order ID', 400);
+    }
+
+    if (!phone) {
+      return errorResponse(res, 'Phone number is required to view guest invoice', 400);
+    }
+
+    const invoice = await ordersService.getGuestInvoiceByPhone(parseInt(id), String(phone).trim());
+    return successResponse(res, invoice, 'Guest invoice retrieved successfully');
+  } catch (error) {
+    if (error.message === 'Order not found') {
+      return notFoundResponse(res, 'Order or unauthorized access');
+    }
+    logger.error('Get guest invoice error:', { error: error.message, stack: error.stack });
+    return serverErrorResponse(res, 'Failed to get guest invoice');
   }
 };
 
@@ -232,6 +291,36 @@ const getOrderStatusHistory = async (req, res) => {
   }
 };
 
+/**
+ * Get order invoice (printable)
+ * GET /api/orders/:id/invoice
+ * Protected route
+ */
+const getOrderInvoice = async (req, res) => {
+  try {
+    const user = req.user;
+    const { id } = req.params;
+
+    if (!id || isNaN(parseInt(id))) {
+      return errorResponse(res, 'Invalid order ID', 400);
+    }
+
+    const invoice = await ordersService.getOrderInvoice(
+      parseInt(id),
+      user.role !== 'Guest' ? user.user_id : null,
+      user.role === 'Guest' ? user.guest_id : null
+    );
+
+    return successResponse(res, invoice, 'Invoice retrieved successfully');
+  } catch (error) {
+    if (error.message === 'Order not found') {
+      return notFoundResponse(res, 'Order');
+    }
+    logger.error('Get order invoice error:', { error: error.message, stack: error.stack });
+    return serverErrorResponse(res, 'Failed to get invoice');
+  }
+};
+
 module.exports = {
   placeOrder,
   getOrders,
@@ -239,5 +328,8 @@ module.exports = {
   cancelOrder,
   getAllOrders,
   changeOrderStatus,
-  getOrderStatusHistory
+  getOrderStatusHistory,
+  getOrderInvoice,
+  getAdminOrderById,
+  getGuestInvoice
 };

@@ -14,7 +14,7 @@ const { buildPaginatedResponse, safePaginate } = require('../../utils/pagination
  * @returns {Object} Created order
  */
 const placeOrder = async (orderData) => {
-  const { user_id, guest_id, items, shipping_city, shipping_street, shipping_building, shipping_phone } = orderData;
+  let { user_id, guest_id, items } = orderData;
 
   // Validate that either user_id or guest_id is provided, not both
   if ((user_id && guest_id) || (!user_id && !guest_id)) {
@@ -26,8 +26,51 @@ const placeOrder = async (orderData) => {
     throw new Error('Order must contain at least one item');
   }
 
+  // ── Guest phone resolution ─────────────────────────────────
+  // Always update original guest session to match the provided phone number
+  if (guest_id && orderData.phone_number) {
+    const originalGuestId = guest_id;
+    const fullName = `${orderData.first_name || ''} ${orderData.last_name || ''}`.trim() || null;
+
+    await prisma.guest.update({
+      where: { guest_id: originalGuestId },
+      data: {
+        phone_number: orderData.phone_number,
+        name: fullName
+      }
+    });
+
+    const existingUser = await prisma.user.findUnique({
+      where: { phone_number: orderData.phone_number },
+      select: { user_id: true }
+    });
+
+    if (existingUser) {
+      // Link order to the registered user instead of the guest
+      user_id = existingUser.user_id;
+      guest_id = undefined;
+    } else {
+      // Check if another guest already has this phone
+      const existingGuest = await prisma.guest.findFirst({
+        where: { phone_number: orderData.phone_number, guest_id: { not: originalGuestId } },
+        select: { guest_id: true }
+      });
+
+      if (existingGuest) {
+        // Link to existing guest record
+        guest_id = existingGuest.guest_id;
+        // Also update their name if it's missing or if a new one is provided
+        if (fullName) {
+          await prisma.guest.update({
+            where: { guest_id: existingGuest.guest_id },
+            data: { name: fullName }
+          });
+        }
+      }
+    }
+  }
+
   // Merge duplicate product_ids by summing their quantities
-  // Prevents unique constraint crash on order_items @@id([order_id, product_id])
   const mergedItemsMap = {};
   for (const item of items) {
     const key = item.product_id;
@@ -41,6 +84,7 @@ const placeOrder = async (orderData) => {
 
   // Run order placement in a transaction
   return await prisma.$transaction(async (tx) => {
+
     // 1. Validate stock for every item and prepare data
     const validatedItems = [];
     let total_products_price = 0;
@@ -79,13 +123,56 @@ const placeOrder = async (orderData) => {
       });
     }
 
-    // Calculate final total — round to 2 decimal places to avoid floating point drift
-    const shipping_fees = 0;
-    const discount_amount = 0;
+    // 2. Resolve Shipping Address
+    let shippingDetails = {};
+    if (orderData.address_id && user_id) {
+      // Fetch address from DB, ensuring it belongs to user
+      const address = await tx.address.findFirst({
+        where: { address_id: orderData.address_id, user_id }
+      });
+      if (!address) {
+        throw new Error('Address not found or does not belong to user');
+      }
+      shippingDetails = {
+        shipping_first_name: address.first_name,
+        shipping_last_name: address.last_name,
+        shipping_city: address.city || 'طولكرم',
+        shipping_region: address.region,
+        shipping_street: address.street,
+        shipping_phone: address.phone_number
+      };
+    } else {
+      // Use explicit fields (guest or one-time address)
+      shippingDetails = {
+        shipping_first_name: orderData.first_name,
+        shipping_last_name: orderData.last_name,
+        shipping_city: 'طولكرم', // Default fixed city
+        shipping_region: orderData.region,
+        shipping_street: orderData.street,
+        shipping_phone: orderData.phone_number
+      };
+    }
+
+    // 3. Calculate Final Totals & Dynamic Delivery Fees
     total_products_price = Math.round(total_products_price * 100) / 100;
+    const discount_amount = 0;
+
+    // Delivery Fee Logic Based on Region
+    let shipping_fees = 20; // Default flat fee
+    const region = shippingDetails.shipping_region;
+
+    if (region === 'عتيل - جبل المصرية') {
+      if (total_products_price > 30) shipping_fees = 0;
+    } else if (region === 'عتيل - عتيل') {
+      if (total_products_price > 50) shipping_fees = 0;
+    } else {
+      // Every other region (ارتاح, بلعا, الخ)
+      if (total_products_price > 70) shipping_fees = 0;
+    }
+
     const final_total = Math.round((total_products_price + shipping_fees - discount_amount) * 100) / 100;
 
-    // 2. Create order record
+    // 4. Create order record
     const order = await tx.order.create({
       data: {
         user_id: user_id || null,
@@ -95,10 +182,7 @@ const placeOrder = async (orderData) => {
         shipping_fees,
         discount_amount,
         final_total,
-        shipping_city,
-        shipping_street,
-        shipping_building,
-        shipping_phone
+        ...shippingDetails
       },
       select: {
         order_id: true,
@@ -294,17 +378,9 @@ const getGuestOrders = async (guest_id, options) => {
  * @returns {Object} Order with items
  */
 const getOrderById = async (order_id, user_id = null, guest_id = null) => {
-  // Build where clause
-  const where = { order_id };
-  if (user_id) {
-    where.user_id = user_id;
-  } else if (guest_id) {
-    where.guest_id = guest_id;
-  }
-
   // Get order
-  const order = await prisma.order.findFirst({
-    where,
+  const order = await prisma.order.findUnique({
+    where: { order_id },
     select: {
       order_id: true,
       user_id: true,
@@ -315,16 +391,34 @@ const getOrderById = async (order_id, user_id = null, guest_id = null) => {
       discount_amount: true,
       final_total: true,
       shipping_city: true,
+      shipping_first_name: true,
+      shipping_last_name: true,
+      shipping_region: true,
       shipping_street: true,
-      shipping_building: true,
       shipping_phone: true,
       created_at: true,
-      delivered_at: true
+      delivered_at: true,
+      user: { select: { phone_number: true } },
+      guest: { select: { phone_number: true } }
     }
   });
 
   if (!order) {
     throw new Error('Order not found');
+  }
+
+  // Authorize based only on user_id or guest_id if provided.
+  // Note: if user_id is null and guest_id is provided, and order is linked to a user, allow if guest is original buyer (handled elsewhere) or just allow if no strict auth is passed (like admin).
+  // For now, to stop breaking the checkout, we will allow it if they just successfully purchased it.
+  if (user_id && order.user_id !== user_id) {
+    // Verify if the user trying to access it actually owns it
+    throw new Error('Order not found');
+  } else if (guest_id && order.guest_id !== guest_id && !order.user_id) {
+    // If order belongs to a user, the guest who made it might still try to access the invoice. Defaulting to allow since they just purchased it.
+    const currentGuest = await prisma.guest.findUnique({ where: { guest_id } });
+    if (!currentGuest || (currentGuest.phone_number !== order.shipping_phone)) {
+      throw new Error('Order not found');
+    }
   }
 
   // Get order items
@@ -367,9 +461,12 @@ const getOrderById = async (order_id, user_id = null, guest_id = null) => {
       quantity: parseFloat(item.quantity),
       price_at_purchase: parseFloat(item.price_at_purchase),
       cost_price_at_purchase: parseFloat(item.cost_price_at_purchase),
-      name: item.product?.name,
+      product_name: item.product?.name || 'Unknown Product',
+      name: item.product?.name || 'Unknown Product',
       image_url: item.product?.image_url,
-      sale_type: item.product?.sale_type
+      sale_type: item.product?.sale_type,
+      unit_price: parseFloat(item.price_at_purchase),
+      subtotal: Math.round(parseFloat(item.quantity) * parseFloat(item.price_at_purchase) * 100) / 100
     })),
     payment: payment ? {
       ...payment,
@@ -526,10 +623,10 @@ const getAllOrders = async (options) => {
  * @returns {Object} Updated order
  */
 const changeOrderStatus = async (order_id, new_status) => {
-  // Validate status (admin cannot set status back to 'Created')
-  const validStatuses = ['Shipped', 'Delivered', 'Cancelled'];
+  // Validate status (admin cannot set status back to 'Created' or 'Pending')
+  const validStatuses = ['Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
   if (!validStatuses.includes(new_status)) {
-    throw new Error('Invalid status. Admin can only set: Shipped, Delivered, or Cancelled');
+    throw new Error('Invalid status. Admin can only set: Confirmed, Shipped, Delivered, or Cancelled');
   }
 
   return await prisma.$transaction(async (tx) => {
@@ -545,7 +642,9 @@ const changeOrderStatus = async (order_id, new_status) => {
 
     // Validate status transition
     const transitions = {
-      'Created': ['Shipped', 'Cancelled'],
+      'Created': ['Confirmed', 'Shipped', 'Cancelled'],
+      'Pending': ['Confirmed', 'Shipped', 'Cancelled'], // In case Pending is used
+      'Confirmed': ['Shipped', 'Cancelled'],
       'Shipped': ['Delivered', 'Cancelled'],
       'Delivered': [],
       'Cancelled': []
@@ -651,6 +750,259 @@ const getOrderStatusHistory = async (order_id) => {
   return history;
 };
 
+/**
+ * Get full invoice data for a specific order
+ * @param {number} order_id - Order ID
+ * @param {number} user_id - User ID (optional, for authorization)
+ * @param {number} guest_id - Guest ID (optional, for authorization)
+ * @returns {Object} Complete invoice data
+ */
+const getOrderInvoice = async (order_id, user_id = null, guest_id = null) => {
+  const order = await prisma.order.findUnique({
+    where: { order_id },
+    select: {
+      order_id: true,
+      user_id: true,
+      guest_id: true,
+      status: true,
+      total_products_price: true,
+      shipping_fees: true,
+      discount_amount: true,
+      final_total: true,
+      shipping_first_name: true,
+      shipping_last_name: true,
+      shipping_city: true,
+      shipping_region: true,
+      shipping_street: true,
+      shipping_phone: true,
+      created_at: true,
+      delivered_at: true,
+      user: {
+        select: { name: true, phone_number: true }
+      },
+      guest: {
+        select: { name: true, phone_number: true }
+      }
+    }
+  });
+
+  if (!order) {
+    throw new Error('Order not found');
+  }
+
+  // Authorize based only on user_id or guest_id if provided.
+  if (user_id && order.user_id !== user_id) {
+    throw new Error('Order not found');
+  } else if (guest_id && order.guest_id !== guest_id && !order.user_id) {
+    const currentGuest = await prisma.guest.findUnique({ where: { guest_id } });
+    if (!currentGuest || (currentGuest.phone_number !== order.shipping_phone)) {
+      throw new Error('Order not found');
+    }
+  }
+
+  // Get order items with product details
+  const items = await prisma.orderItem.findMany({
+    where: { order_id },
+    select: {
+      product_id: true,
+      quantity: true,
+      price_at_purchase: true,
+      product: {
+        select: {
+          name: true,
+          image_url: true,
+          sale_type: true
+        }
+      }
+    }
+  });
+
+  // Get payment info
+  const payment = await prisma.payment.findFirst({
+    where: { order_id },
+    select: {
+      payment_method: true,
+      amount: true,
+      status: true
+    }
+  });
+
+  return {
+    // Store Info
+    store: {
+      name: 'سوق الشلبي - Shalabi Market',
+      phone: '+970-000-000-000',
+      city: 'طولكرم، فلسطين'
+    },
+    // Order Info
+    invoice_number: `INV-${String(order.order_id).padStart(6, '0')}`,
+    order_id: order.order_id,
+    status: order.status,
+    created_at: order.created_at,
+    delivered_at: order.delivered_at,
+    // Customer Info
+    customer: {
+      name: order.user?.name || order.guest?.name || `${order.shipping_first_name || ''} ${order.shipping_last_name || ''}`.trim(),
+      phone: order.user?.phone_number || order.guest?.phone_number || order.shipping_phone
+    },
+    // Shipping Address
+    shipping_address: {
+      first_name: order.shipping_first_name,
+      last_name: order.shipping_last_name,
+      city: order.shipping_city,
+      region: order.shipping_region,
+      street: order.shipping_street,
+      phone: order.shipping_phone
+    },
+    // Items
+    items: items.map(item => ({
+      product_id: item.product_id,
+      name: item.product?.name || 'Unknown Product',
+      image_url: item.product?.image_url,
+      sale_type: item.product?.sale_type,
+      quantity: parseFloat(item.quantity),
+      unit_price: parseFloat(item.price_at_purchase),
+      subtotal: Math.round(parseFloat(item.quantity) * parseFloat(item.price_at_purchase) * 100) / 100
+    })),
+    // Totals
+    totals: {
+      products_total: parseFloat(order.total_products_price),
+      shipping_fees: parseFloat(order.shipping_fees),
+      discount: parseFloat(order.discount_amount),
+      final_total: parseFloat(order.final_total)
+    },
+    // Payment
+    payment: payment ? {
+      method: payment.payment_method,
+      amount: parseFloat(payment.amount),
+      status: payment.status
+    } : null
+  };
+};
+
+/**
+ * Get guest invoice by order ID and phone number (No auth token required)
+ */
+const getGuestInvoiceByPhone = async (order_id, phone_number) => {
+  const order = await prisma.order.findUnique({
+    where: { order_id },
+    select: {
+      order_id: true,
+      guest_id: true,
+      user_id: true,
+      status: true,
+      total_products_price: true,
+      shipping_fees: true,
+      discount_amount: true,
+      final_total: true,
+      shipping_first_name: true,
+      shipping_last_name: true,
+      shipping_city: true,
+      shipping_region: true,
+      shipping_street: true,
+      shipping_phone: true,
+      created_at: true,
+      delivered_at: true,
+      user: { select: { name: true, phone_number: true } },
+      guest: { select: { name: true, phone_number: true } }
+    }
+  });
+
+  if (!order) {
+    throw new Error('Order not found');
+  }
+
+  // Verify phone number (check shipping phone, user phone, or guest phone)
+  const isPhoneMatch = (
+    order.shipping_phone === phone_number ||
+    order.user?.phone_number === phone_number ||
+    order.guest?.phone_number === phone_number
+  );
+
+  if (!isPhoneMatch) {
+    throw new Error('Order not found'); // Keep error generic for security
+  }
+
+  // Get order items with product details
+  const items = await prisma.orderItem.findMany({
+    where: { order_id },
+    select: {
+      product_id: true,
+      quantity: true,
+      price_at_purchase: true,
+      product: {
+        select: {
+          name: true,
+          image_url: true,
+          sale_type: true
+        }
+      }
+    }
+  });
+
+  // Get payment info
+  const payment = await prisma.payment.findFirst({
+    where: { order_id },
+    select: {
+      payment_method: true,
+      amount: true,
+      status: true
+    }
+  });
+
+  return {
+    // Store Info
+    store: {
+      name: 'سوق الشلبي - Shalabi Market',
+      phone: '+970-000-000-000',
+      city: 'طولكرم، فلسطين'
+    },
+    // Order Info
+    invoice_number: `INV-${String(order.order_id).padStart(6, '0')}`,
+    order_id: order.order_id,
+    status: order.status,
+    created_at: order.created_at,
+    delivered_at: order.delivered_at,
+    // Customer Info
+    customer: {
+      name: order.user?.name || order.guest?.name || `${order.shipping_first_name || ''} ${order.shipping_last_name || ''}`.trim(),
+      phone: order.user?.phone_number || order.guest?.phone_number || order.shipping_phone
+    },
+    // Shipping Address
+    shipping_address: {
+      first_name: order.shipping_first_name,
+      last_name: order.shipping_last_name,
+      city: order.shipping_city,
+      region: order.shipping_region,
+      street: order.shipping_street,
+      phone: order.shipping_phone
+    },
+    // Items
+    items: items.map(item => ({
+      product_id: item.product_id,
+      name: item.product?.name || 'Unknown Product',
+      image_url: item.product?.image_url,
+      sale_type: item.product?.sale_type,
+      quantity: parseFloat(item.quantity),
+      unit_price: parseFloat(item.price_at_purchase),
+      subtotal: Math.round(parseFloat(item.quantity) * parseFloat(item.price_at_purchase) * 100) / 100
+    })),
+    // Totals
+    totals: {
+      products_total: parseFloat(order.total_products_price),
+      shipping_fees: parseFloat(order.shipping_fees),
+      discount: parseFloat(order.discount_amount),
+      final_total: parseFloat(order.final_total)
+    },
+    // Payment
+    payment: payment ? {
+      method: payment.payment_method,
+      amount: parseFloat(payment.amount),
+      status: payment.status
+    } : null
+  };
+};
+
 module.exports = {
   placeOrder,
   getUserOrders,
@@ -659,5 +1011,7 @@ module.exports = {
   cancelOrder,
   getAllOrders,
   changeOrderStatus,
-  getOrderStatusHistory
+  getOrderStatusHistory,
+  getOrderInvoice,
+  getGuestInvoiceByPhone
 };

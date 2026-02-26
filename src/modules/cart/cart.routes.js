@@ -1,55 +1,117 @@
 const express = require('express');
 const router = express.Router();
 const cartController = require('./cart.controller');
-const { authenticate, requireUser } = require('../../middlewares/auth.middleware');
+const { authenticate, allowGuestOrUser } = require('../../middlewares/auth.middleware');
 const { validate } = require('../../middlewares/validate.middleware');
 const cartValidators = require('./cart.validators');
 
 /**
- * Cart Routes
- * Note: Guests do not have a cart in the database - guest cart lives in the browser
+ * @swagger
+ * /api/cart:
+ *   get:
+ *     summary: عرض محتويات السلة
+ *     tags: [Cart]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: محتويات السلة مع الإجماليات
+ *   delete:
+ *     summary: تفريغ السلة بالكامل
+ *     tags: [Cart]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: تم تفريغ السلة
  */
+router.get('/', authenticate, allowGuestOrUser, cartController.getCart);
+router.delete('/', authenticate, allowGuestOrUser, cartController.clearCart);
 
 /**
- * @route   GET /api/cart
- * @desc    Get user's cart with items and totals
- * @access  Private (registered users only)
+ * @swagger
+ * /api/cart/validate:
+ *   get:
+ *     summary: التحقق من توفر المنتجات في السلة
+ *     tags: [Cart]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: نتيجة التحقق
  */
-router.get('/', authenticate, requireUser, cartController.getCart);
+router.get('/validate', authenticate, allowGuestOrUser, cartController.validateCart);
 
 /**
- * @route   GET /api/cart/validate
- * @desc    Validate cart items against stock
- * @access  Private (registered users only)
+ * @swagger
+ * /api/cart/items:
+ *   post:
+ *     summary: إضافة منتج للسلة
+ *     tags: [Cart]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [product_id, quantity]
+ *             properties:
+ *               product_id:
+ *                 type: integer
+ *               quantity:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: تم الإضافة للسلة
  */
-router.get('/validate', authenticate, requireUser, cartController.validateCart);
+router.post('/items', authenticate, allowGuestOrUser, cartValidators.addToCart, validate, cartController.addToCart);
 
 /**
- * @route   POST /api/cart/items
- * @desc    Add item to cart
- * @access  Private (registered users only)
+ * @swagger
+ * /api/cart/items/{productId}:
+ *   put:
+ *     summary: تحديث كمية منتج في السلة
+ *     tags: [Cart]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [quantity]
+ *             properties:
+ *               quantity:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: تم تحديث الكمية
+ *   delete:
+ *     summary: حذف منتج من السلة
+ *     tags: [Cart]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: تم حذف المنتج من السلة
  */
-router.post('/items', authenticate, requireUser, cartValidators.addToCart, validate, cartController.addToCart);
-
-/**
- * @route   PUT /api/cart/items/:productId
- * @desc    Update cart item quantity
- * @access  Private (registered users only)
- */
-router.put('/items/:productId', authenticate, requireUser, cartValidators.updateCartItem, validate, cartController.updateCartItem);
-
-/**
- * @route   DELETE /api/cart/items/:productId
- * @desc    Remove item from cart
- * @access  Private (registered users only)
- */
-router.delete('/items/:productId', authenticate, requireUser, cartValidators.removeFromCart, validate, cartController.removeFromCart);
-
-/**
- * @route   DELETE /api/cart
- * @desc    Clear all items from cart
- * @access  Private (registered users only)
- */
-router.delete('/', authenticate, requireUser, cartController.clearCart);
+router.put('/items/:productId', authenticate, allowGuestOrUser, cartValidators.updateCartItem, validate, cartController.updateCartItem);
+router.delete('/items/:productId', authenticate, allowGuestOrUser, cartValidators.removeFromCart, validate, cartController.removeFromCart);
 
 module.exports = router;
+

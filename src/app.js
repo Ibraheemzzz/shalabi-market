@@ -1,30 +1,34 @@
 require('dotenv').config();
 const express = require('express');
-const cors    = require('cors');
-const helmet  = require('helmet');
-const morgan  = require('morgan');
-const path    = require('path');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const path = require('path');
 
-const logger         = require('./config/logger');
+const logger = require('./config/logger');
 const { apiLimiter } = require('./middlewares/rateLimit.middleware');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
 
 // ─── Route Imports ────────────────────────────────────────────────────────────
-const authRoutes         = require('./modules/auth/auth.routes');
-const usersRoutes        = require('./modules/users/users.routes');
-const categoriesRoutes   = require('./modules/categories/categories.routes');
-const productsRoutes     = require('./modules/products/products.routes');
-const cartRoutes         = require('./modules/cart/cart.routes');
-const ordersRoutes       = require('./modules/orders/orders.routes');
-const reviewsRoutes      = require('./modules/reviews/reviews.routes');
-const wishlistRoutes     = require('./modules/wishlist/wishlist.routes');
+const authRoutes = require('./modules/auth/auth.routes');
+const usersRoutes = require('./modules/users/users.routes');
+const categoriesRoutes = require('./modules/categories/categories.routes');
+const productsRoutes = require('./modules/products/products.routes');
+const cartRoutes = require('./modules/cart/cart.routes');
+const ordersRoutes = require('./modules/orders/orders.routes');
+const reviewsRoutes = require('./modules/reviews/reviews.routes');
+const wishlistRoutes = require('./modules/wishlist/wishlist.routes');
+const addressesRoutes = require('./modules/addresses/addresses.routes');
+const shippingRoutes = require('./modules/shipping/shipping.routes');
 
 // ─── Admin-only Route Imports ─────────────────────────────────────────────────
-const adminUsersRoutes      = require('./modules/users/admin.users.routes');
+const adminUsersRoutes = require('./modules/users/admin.users.routes');
 const adminCategoriesRoutes = require('./modules/categories/admin.categories.routes');
-const adminProductsRoutes   = require('./modules/products/admin.products.routes');
-const adminOrdersRoutes     = require('./modules/orders/admin.orders.routes');
-const adminReviewsRoutes    = require('./modules/reviews/admin.reviews.routes');
-const reportsRoutes         = require('./modules/reports/reports.routes');
+const adminProductsRoutes = require('./modules/products/admin.products.routes');
+const adminOrdersRoutes = require('./modules/orders/admin.orders.routes');
+const adminReviewsRoutes = require('./modules/reviews/admin.reviews.routes');
+const reportsRoutes = require('./modules/reports/reports.routes');
 
 const app = express();
 
@@ -109,36 +113,69 @@ app.get('/api/health', (req, res) => {
 });
 
 // ─── Public / User API Routes ─────────────────────────────────────────────────
-app.use('/api/auth',       authRoutes);
-app.use('/api/users',      usersRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/categories', categoriesRoutes);
-app.use('/api/products',   productsRoutes);
-app.use('/api/cart',       cartRoutes);
-app.use('/api/orders',     ordersRoutes);
-app.use('/api',            reviewsRoutes);
-app.use('/api/wishlist',   wishlistRoutes);
+app.use('/api/products', productsRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/orders', ordersRoutes);
+app.use('/api', reviewsRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/addresses', addressesRoutes);
+app.use('/api/shipping', shippingRoutes);
 
 // ─── Admin API Routes ─────────────────────────────────────────────────────────
-app.use('/api/admin/users',      adminUsersRoutes);
+app.use('/api/admin/users', adminUsersRoutes);
 app.use('/api/admin/categories', adminCategoriesRoutes);
-app.use('/api/admin/products',   adminProductsRoutes);
-app.use('/api/admin/orders',     adminOrdersRoutes);
-app.use('/api/admin/reviews',    adminReviewsRoutes);
-app.use('/api/admin',            reportsRoutes);
+app.use('/api/admin/products', adminProductsRoutes);
+app.use('/api/admin/orders', adminOrdersRoutes);
+app.use('/api/admin/reviews', adminReviewsRoutes);
+app.use('/api/admin', reportsRoutes);
 
-// ─── 404 Handler ──────────────────────────────────────────────────────────────
-app.use((req, res) => {
-  res.status(404).json({ success: false, message: 'Endpoint not found', data: null });
+// ─── Swagger API Documentation ────────────────────────────────────────────────
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Shalabi Market API Docs'
+}));
+
+// Serve raw spec as JSON
+app.get('/api/docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
+// ─── Frontend Static Files (For Monolithic Deployment) ──────────────────────
+const frontendPath = path.join(__dirname, '../public');
+app.use(express.static(frontendPath));
+
+// ─── SPA Catch-all Route ──────────────────────────────────────────────────────
+// This should be the very last route before global error handlers.
+// It ensures that React/Vue/Angular frontend router handles all non-API paths.
+app.get('*', (req, res, next) => {
+  if (req.originalUrl.startsWith('/api')) {
+    // If it was meant for the API but wasn't found, let the 404 handler catch it
+    return next();
+  }
+  res.sendFile(path.join(frontendPath, 'index.html'), (err) => {
+    if (err) {
+      res.status(404).json({ success: false, message: 'Frontend index.html not found. Make sure to build the frontend into the backend public directory.', data: null });
+    }
+  });
+});
+
+// ─── 404 API Handler ──────────────────────────────────────────────────────────
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ success: false, message: 'API Endpoint not found', data: null });
 });
 
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   logger.error(err.message, {
-    stack:  err.stack,
+    stack: err.stack,
     method: req.method,
-    url:    req.originalUrl,
-    ip:     req.ip,
+    url: req.originalUrl,
+    ip: req.ip,
     userId: req.user?.id ?? null
   });
 

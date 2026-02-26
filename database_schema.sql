@@ -19,7 +19,7 @@ CREATE TABLE users (
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP DEFAULT now(),
 
-  CONSTRAINT role_check CHECK (role IN ('Admin', 'Customer', 'Guest'))
+  CONSTRAINT role_check CHECK (role IN ('Admin', 'ProductManager', 'OrderManager', 'Customer', 'Guest'))
 );
 
 -- =========================================
@@ -194,7 +194,7 @@ CREATE TABLE orders (
   FOREIGN KEY (guest_id) REFERENCES guests(guest_id),
   FOREIGN KEY (user_coupon_id) REFERENCES user_coupons(user_coupon_id),
 
-  CONSTRAINT order_status_check CHECK (status IN ('Created', 'Shipped', 'Delivered', 'Cancelled')),
+  CONSTRAINT order_status_check CHECK (status IN ('Created', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled')),
   CONSTRAINT check_user_or_guest CHECK (
     (user_id IS NOT NULL AND guest_id IS NULL)
     OR

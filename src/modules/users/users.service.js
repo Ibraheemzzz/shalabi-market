@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../../config/prisma');
 const { buildPaginatedResponse, safePaginate } = require('../../utils/pagination');
+const smsService = require('../../utils/sms');
 
 /**
  * Users Service
@@ -167,6 +168,7 @@ const getAllUsers = async (options) => {
   return buildPaginatedResponse(users, totalItems, safePage, safeLimit);
 };
 
+
 /**
  * Toggle user active status (admin only)
  * @param {number} user_id - User ID to toggle
@@ -261,11 +263,130 @@ const getUserStats = async (user_id) => {
   };
 };
 
+/**
+ * Request phone number change — sends OTP to new phone
+ * @param {number} user_id - Current user ID
+ * @param {string} new_phone_number - New phone number
+ */
+const requestPhoneChange = async (user_id, new_phone_number) => {
+  // Check new number isn't already taken
+  const existing = await prisma.user.findUnique({
+    where: { phone_number: new_phone_number }
+  });
+
+  if (existing) {
+    throw new Error('PHONE_ALREADY_TAKEN');
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { user_id },
+    select: { phone_number: true }
+  });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  if (user.phone_number === new_phone_number) {
+    throw new Error('SAME_PHONE');
+  }
+
+  // Send OTP to the NEW phone number
+  const otp_code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expires_at = new Date(Date.now() + 5 * 60 * 1000);
+
+  await prisma.otpCode.create({
+    data: { phone_number: new_phone_number, otp_code, expires_at }
+  });
+
+  await smsService.sendOTP(new_phone_number, otp_code);
+
+  return { message: 'تم إرسال رمز التحقق إلى الرقم الجديد' };
+};
+
+/**
+ * Verify phone change using OTP
+ * @param {number} user_id - Current user ID
+ * @param {string} new_phone_number - New phone number
+ * @param {string} otp_code - OTP code
+ */
+const verifyPhoneChange = async (user_id, new_phone_number, otp_code) => {
+  const otpRecord = await prisma.otpCode.findFirst({
+    where: {
+      phone_number: new_phone_number,
+      otp_code,
+      is_used: false,
+      expires_at: { gt: new Date() }
+    },
+    orderBy: { created_at: 'desc' }
+  });
+
+  if (!otpRecord) {
+    throw new Error('INVALID_OTP');
+  }
+
+  await prisma.otpCode.update({
+    where: { otp_id: otpRecord.otp_id },
+    data: { is_used: true }
+  });
+
+  const updatedUser = await prisma.user.update({
+    where: { user_id },
+    data: { phone_number: new_phone_number },
+    select: {
+      user_id: true,
+      name: true,
+      phone_number: true,
+      role: true
+    }
+  });
+
+  return updatedUser;
+};
+
+/**
+ * Change user role (admin only)
+ * @param {number} user_id - User ID
+ * @param {string} new_role - New role to assign
+ * @returns {Object} Updated user
+ */
+const changeUserRole = async (user_id, new_role) => {
+  const validRoles = ['Customer', 'Guest', 'Admin', 'ProductManager', 'OrderManager'];
+  if (!validRoles.includes(new_role)) {
+    throw new Error('Invalid role');
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { user_id },
+    select: { user_id: true, role: true, name: true }
+  });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  // Prevent changing the main Admin role (safety)
+  if (user_id === 1) {
+    throw new Error('Cannot change main Admin role');
+  }
+
+  const updated = await prisma.user.update({
+    where: { user_id },
+    data: { role: new_role },
+    select: { user_id: true, name: true, role: true, phone_number: true }
+  });
+
+  return updated;
+};
+
 module.exports = {
   getProfile,
   updateProfile,
   getAllUsers,
   toggleUserStatus,
   getUserById,
-  getUserStats
+  getUserStats,
+  requestPhoneChange,
+  verifyPhoneChange,
+  changeUserRole
 };

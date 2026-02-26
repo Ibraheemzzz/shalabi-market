@@ -3,18 +3,45 @@ const router = express.Router();
 const categoriesController = require('./categories.controller');
 
 /**
- * Public Categories Routes
- * Mounted at: /api/categories
+ * @swagger
+ * /api/categories:
+ *   get:
+ *     summary: التصنيفات كشجرة هرمية
+ *     tags: [Categories]
+ *     responses:
+ *       200:
+ *         description: شجرة التصنيفات
  */
-
-// GET /api/categories        → hierarchical tree
 router.get('/', categoriesController.getCategoryTree);
 
-// GET /api/categories/list   → flat list
-// NOTE: must be defined before /:id to avoid "list" being treated as an id
+/**
+ * @swagger
+ * /api/categories/list:
+ *   get:
+ *     summary: قائمة التصنيفات المسطّحة
+ *     tags: [Categories]
+ *     responses:
+ *       200:
+ *         description: قائمة مسطحة
+ */
 router.get('/list', categoriesController.getAllCategories);
 
-// GET /api/categories/:id    → single category
+/**
+ * @swagger
+ * /api/categories/{id}:
+ *   get:
+ *     summary: تصنيف محدد
+ *     tags: [Categories]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: بيانات التصنيف
+ */
 router.get('/:id', categoriesController.getCategoryById);
 
 module.exports = router;

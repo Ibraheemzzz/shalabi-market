@@ -13,23 +13,32 @@ const request = require('supertest');
 jest.mock('../src/config/prisma', () => ({
   user: {
     findUnique: jest.fn(),
-    create:     jest.fn(),
-    update:     jest.fn()
+    create: jest.fn(),
+    update: jest.fn()
   },
   guest: {
     create: jest.fn()
   },
+  otpCode: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn()
+  },
   $disconnect: jest.fn()
 }));
 
+jest.mock('../src/utils/sms', () => ({
+  sendOTP: jest.fn()
+}));
+
 const prisma = require('../src/config/prisma');
-const app    = require('../src/app');
+const app = require('../src/app');
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const validUser = {
   phone_number: '0599123456',
-  name:         'Test User',
-  password:     'password123'
+  name: 'Test User',
+  password: 'Password123'
 };
 
 // ─── POST /api/auth/register ───────────────────────────────────────────────────
@@ -39,24 +48,22 @@ describe('POST /api/auth/register', () => {
   it('✅ registers a new user and returns 201', async () => {
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.user.create.mockResolvedValue({
-      user_id:      1,
+      user_id: 1,
       phone_number: validUser.phone_number,
-      name:         validUser.name,
-      role:         'Customer',
-      created_at:   new Date()
+      name: validUser.name,
+      role: 'Customer',
+      created_at: new Date()
     });
 
     const res = await request(app).post('/api/auth/register').send(validUser);
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.data).toHaveProperty('user_id');
-    expect(res.body.data).not.toHaveProperty('password');
-    expect(res.body.data).not.toHaveProperty('password_hash');
+    expect(res.body.message).toMatch(/Registration successful/i);
   });
 
   it('❌ returns 409 when phone number already exists', async () => {
-    prisma.user.findUnique.mockResolvedValue({ user_id: 1, phone_number: validUser.phone_number });
+    prisma.user.findUnique.mockResolvedValue({ user_id: 1, phone_number: validUser.phone_number, is_verified: true });
 
     const res = await request(app).post('/api/auth/register').send(validUser);
 
@@ -105,14 +112,15 @@ describe('POST /api/auth/login', () => {
 
   it('✅ logs in with correct credentials and returns token', async () => {
     const bcrypt = require('bcryptjs');
-    const hash   = await bcrypt.hash(validUser.password, 10);
+    const hash = await bcrypt.hash(validUser.password, 10);
 
     prisma.user.findUnique.mockResolvedValue({
-      user_id:       1,
-      phone_number:  validUser.phone_number,
-      name:          validUser.name,
-      role:          'Customer',
-      is_active:     true,
+      user_id: 1,
+      phone_number: validUser.phone_number,
+      name: validUser.name,
+      role: 'Customer',
+      is_active: true,
+      is_verified: true,
       password_hash: hash
     });
     prisma.user.update.mockResolvedValue({});
@@ -129,12 +137,13 @@ describe('POST /api/auth/login', () => {
 
   it('❌ returns 401 for wrong password', async () => {
     const bcrypt = require('bcryptjs');
-    const hash   = await bcrypt.hash('correctpassword', 10);
+    const hash = await bcrypt.hash('correctpassword', 10);
 
     prisma.user.findUnique.mockResolvedValue({
-      user_id:       1,
-      phone_number:  validUser.phone_number,
-      is_active:     true,
+      user_id: 1,
+      phone_number: validUser.phone_number,
+      is_active: true,
+      is_verified: true,
       password_hash: hash
     });
 
@@ -158,12 +167,12 @@ describe('POST /api/auth/login', () => {
 
   it('❌ returns 403 for deactivated account', async () => {
     const bcrypt = require('bcryptjs');
-    const hash   = await bcrypt.hash(validUser.password, 10);
+    const hash = await bcrypt.hash(validUser.password, 10);
 
     prisma.user.findUnique.mockResolvedValue({
-      user_id:       99,
-      phone_number:  validUser.phone_number,
-      is_active:     false,
+      user_id: 99,
+      phone_number: validUser.phone_number,
+      is_active: false,
       password_hash: hash
     });
 

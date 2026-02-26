@@ -1,23 +1,76 @@
 const express = require('express');
 const router = express.Router();
 const categoriesController = require('./categories.controller');
-const { authenticate, requireAdmin } = require('../../middlewares/auth.middleware');
+const { authenticate, requirePermission } = require('../../middlewares/auth.middleware');
 const { validate } = require('../../middlewares/validate.middleware');
 const categoriesValidators = require('./categories.validators');
 
 /**
- * Admin Categories Routes
- * Mounted at: /api/admin/categories
- * All routes require Admin role
+ * @swagger
+ * /api/admin/categories:
+ *   post:
+ *     summary: إنشاء تصنيف جديد
+ *     tags: [Admin - Categories]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: "أجهزة إلكترونية"
+ *               description:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: تم إنشاء التصنيف
+ *       403:
+ *         description: "صلاحية مطلوبة: category.manage"
  */
+router.post('/', authenticate, requirePermission('category.manage'), categoriesValidators.create, validate, categoriesController.createCategory);
 
-// POST /api/admin/categories        → create category
-router.post('/', authenticate, requireAdmin, categoriesValidators.create, validate, categoriesController.createCategory);
-
-// PUT /api/admin/categories/:id     → update category
-router.put('/:id', authenticate, requireAdmin, categoriesValidators.update, validate, categoriesController.updateCategory);
-
-// DELETE /api/admin/categories/:id  → delete category
-router.delete('/:id', authenticate, requireAdmin, categoriesController.deleteCategory);
+/**
+ * @swagger
+ * /api/admin/categories/{id}:
+ *   put:
+ *     summary: تعديل تصنيف
+ *     tags: [Admin - Categories]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: تم تعديل التصنيف
+ *       403:
+ *         description: "صلاحية مطلوبة: category.manage"
+ *   delete:
+ *     summary: حذف تصنيف
+ *     tags: [Admin - Categories]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: تم حذف التصنيف
+ *       403:
+ *         description: "صلاحية مطلوبة: category.manage"
+ */
+router.put('/:id', authenticate, requirePermission('category.manage'), categoriesValidators.update, validate, categoriesController.updateCategory);
+router.delete('/:id', authenticate, requirePermission('category.manage'), categoriesController.deleteCategory);
 
 module.exports = router;
