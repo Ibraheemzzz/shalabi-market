@@ -97,7 +97,7 @@ const getProductById = withController(
   async (req, res) => {
     const productId = parseId(req.params.id);
 
-    if (!productId) {
+    if (productId === null) {
       return errorResponse(res, 'Invalid product ID', 400);
     }
 
@@ -183,7 +183,7 @@ const updateProduct = withController(
     const productId = parseId(req.params.id);
     const { name, description, price, cost_price, sale_type, category_id } = req.body;
 
-    if (!productId) {
+    if (productId === null) {
       return errorResponse(res, 'Invalid product ID', 400);
     }
 
@@ -229,7 +229,7 @@ const deleteProduct = withController(
   async (req, res) => {
     const productId = parseId(req.params.id);
 
-    if (!productId) {
+    if (productId === null) {
       return errorResponse(res, 'Invalid product ID', 400);
     }
 
@@ -264,7 +264,7 @@ const adjustStock = withController(
     const productId = parseId(req.params.id);
     const { quantity_change, reason } = req.body;
 
-    if (!productId) {
+    if (productId === null) {
       return errorResponse(res, 'Invalid product ID', 400);
     }
 
@@ -308,7 +308,7 @@ const getStockHistory = withController(
     const productId = parseId(req.params.id);
     const { page, limit } = req.query;
 
-    if (!productId) {
+    if (productId === null) {
       return errorResponse(res, 'Invalid product ID', 400);
     }
 
