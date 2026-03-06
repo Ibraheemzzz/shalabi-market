@@ -9,26 +9,7 @@ const logger = require('./config/logger');
 const { apiLimiter } = require('./middlewares/rateLimit.middleware');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
-
-// ─── Route Imports ────────────────────────────────────────────────────────────
-const authRoutes = require('./modules/auth/auth.routes');
-const usersRoutes = require('./modules/users/users.routes');
-const categoriesRoutes = require('./modules/categories/categories.routes');
-const productsRoutes = require('./modules/products/products.routes');
-const cartRoutes = require('./modules/cart/cart.routes');
-const ordersRoutes = require('./modules/orders/orders.routes');
-const reviewsRoutes = require('./modules/reviews/reviews.routes');
-const wishlistRoutes = require('./modules/wishlist/wishlist.routes');
-const addressesRoutes = require('./modules/addresses/addresses.routes');
-const shippingRoutes = require('./modules/shipping/shipping.routes');
-
-// ─── Admin-only Route Imports ─────────────────────────────────────────────────
-const adminUsersRoutes = require('./modules/users/admin.users.routes');
-const adminCategoriesRoutes = require('./modules/categories/admin.categories.routes');
-const adminProductsRoutes = require('./modules/products/admin.products.routes');
-const adminOrdersRoutes = require('./modules/orders/admin.orders.routes');
-const adminReviewsRoutes = require('./modules/reviews/admin.reviews.routes');
-const reportsRoutes = require('./modules/reports/reports.routes');
+const { registerApiRoutes } = require('./routes');
 
 const app = express();
 
@@ -112,25 +93,8 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'Shalabi Market API is running', data: { version: '1.0.0', timestamp: new Date().toISOString() } });
 });
 
-// ─── Public / User API Routes ─────────────────────────────────────────────────
-app.use('/api/auth', authRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/categories', categoriesRoutes);
-app.use('/api/products', productsRoutes);
-app.use('/api/cart', cartRoutes);
-app.use('/api/orders', ordersRoutes);
-app.use('/api', reviewsRoutes);
-app.use('/api/wishlist', wishlistRoutes);
-app.use('/api/addresses', addressesRoutes);
-app.use('/api/shipping', shippingRoutes);
-
-// ─── Admin API Routes ─────────────────────────────────────────────────────────
-app.use('/api/admin/users', adminUsersRoutes);
-app.use('/api/admin/categories', adminCategoriesRoutes);
-app.use('/api/admin/products', adminProductsRoutes);
-app.use('/api/admin/orders', adminOrdersRoutes);
-app.use('/api/admin/reviews', adminReviewsRoutes);
-app.use('/api/admin', reportsRoutes);
+// ─── Public / User/Admin API Routes ───────────────────────────────────────────
+registerApiRoutes(app);
 
 // ─── Swagger API Documentation ────────────────────────────────────────────────
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {

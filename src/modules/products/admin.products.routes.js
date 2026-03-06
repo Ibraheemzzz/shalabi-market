@@ -5,6 +5,7 @@ const { authenticate, requirePermission } = require('../../middlewares/auth.midd
 const { validate } = require('../../middlewares/validate.middleware');
 const { uploadProductImage, handleMulterError } = require('../../config/multer');
 const { uploadLimiter } = require('../../middlewares/rateLimit.middleware');
+const { asyncHandler } = require('../../middlewares/asyncHandler');
 const productsValidators = require('./products.validators');
 
 /**
@@ -54,7 +55,7 @@ const productsValidators = require('./products.validators');
  *       403:
  *         description: "صلاحية مطلوبة: product.create"
  */
-router.get('/', authenticate, requirePermission('product.view_all'), productsController.getAllProductsAdmin);
+router.get('/', authenticate, requirePermission('product.view_all'), asyncHandler(productsController.getAllProductsAdmin));
 router.post(
   '/',
   authenticate,
@@ -64,7 +65,7 @@ router.post(
   handleMulterError,
   productsValidators.create,
   validate,
-  productsController.createProduct
+  asyncHandler(productsController.createProduct)
 );
 
 /**
@@ -112,9 +113,9 @@ router.put(
   handleMulterError,
   productsValidators.update,
   validate,
-  productsController.updateProduct
+  asyncHandler(productsController.updateProduct)
 );
-router.delete('/:id', authenticate, requirePermission('product.delete'), productsController.deleteProduct);
+router.delete('/:id', authenticate, requirePermission('product.delete'), asyncHandler(productsController.deleteProduct));
 
 /**
  * @swagger
@@ -136,7 +137,7 @@ router.delete('/:id', authenticate, requirePermission('product.delete'), product
  *       403:
  *         description: "صلاحية مطلوبة: product.edit"
  */
-router.post('/:id/stock', authenticate, requirePermission('product.edit'), productsValidators.adjustStock, validate, productsController.adjustStock);
+router.post('/:id/stock', authenticate, requirePermission('product.edit'), productsValidators.adjustStock, validate, asyncHandler(productsController.adjustStock));
 
 /**
  * @swagger
@@ -158,6 +159,6 @@ router.post('/:id/stock', authenticate, requirePermission('product.edit'), produ
  *       403:
  *         description: "صلاحية مطلوبة: product.view_all"
  */
-router.get('/:id/stock-history', authenticate, requirePermission('product.view_all'), productsController.getStockHistory);
+router.get('/:id/stock-history', authenticate, requirePermission('product.view_all'), asyncHandler(productsController.getStockHistory));
 
 module.exports = router;

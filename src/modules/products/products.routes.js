@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const productsController = require('./products.controller');
+const { asyncHandler } = require('../../middlewares/asyncHandler');
 
 /**
  * @swagger
@@ -34,7 +35,7 @@ const productsController = require('./products.controller');
  *       200:
  *         description: قائمة المنتجات مع pagination
  */
-router.get('/', productsController.getProducts);
+router.get('/', asyncHandler(productsController.getProducts));
 
 /**
  * @swagger
@@ -54,6 +55,6 @@ router.get('/', productsController.getProducts);
  *       404:
  *         description: المنتج غير موجود
  */
-router.get('/:id', productsController.getProductById);
+router.get('/:id', asyncHandler(productsController.getProductById));
 
 module.exports = router;

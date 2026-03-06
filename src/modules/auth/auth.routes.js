@@ -4,6 +4,7 @@ const router = express.Router();
 const authController = require('./auth.controller');
 const { authenticate, requireUser } = require('../../middlewares/auth.middleware');
 const { validate } = require('../../middlewares/validate.middleware');
+const { asyncHandler } = require('../../middlewares/asyncHandler');
 const authValidators = require('./auth.validators');
 const { loginLimiter, registerLimiter, guestLimiter } = require('../../middlewares/rateLimit.middleware');
 
@@ -27,7 +28,7 @@ const { loginLimiter, registerLimiter, guestLimiter } = require('../../middlewar
  *       429:
  *         description: طلبات كثيرة
  */
-router.post('/register', registerLimiter, authValidators.register, validate, authController.register);
+router.post('/register', registerLimiter, authValidators.register, validate, asyncHandler(authController.register));
 
 /**
  * @swagger
@@ -47,7 +48,7 @@ router.post('/register', registerLimiter, authValidators.register, validate, aut
  *       400:
  *         description: رمز غير صحيح أو منتهي
  */
-router.post('/verify-otp', authValidators.verifyOtp, validate, authController.verifyOtp);
+router.post('/verify-otp', authValidators.verifyOtp, validate, asyncHandler(authController.verifyOtp));
 
 /**
  * @swagger
@@ -65,7 +66,7 @@ router.post('/verify-otp', authValidators.verifyOtp, validate, authController.ve
  *       200:
  *         description: تم إرسال الرمز
  */
-router.post('/resend-otp', authValidators.resendOtp, validate, authController.resendOtp);
+router.post('/resend-otp', authValidators.resendOtp, validate, asyncHandler(authController.resendOtp));
 
 /**
  * @swagger
@@ -88,7 +89,7 @@ router.post('/resend-otp', authValidators.resendOtp, validate, authController.re
  *       404:
  *         description: الرقم غير مسجّل
  */
-router.post('/check-phone', authValidators.checkPhone, validate, authController.checkPhone);
+router.post('/check-phone', authValidators.checkPhone, validate, asyncHandler(authController.checkPhone));
 
 /**
  * @swagger
@@ -110,7 +111,7 @@ router.post('/check-phone', authValidators.checkPhone, validate, authController.
  *       429:
  *         description: محاولات كثيرة
  */
-router.post('/login', loginLimiter, authValidators.login, validate, authController.login);
+router.post('/login', loginLimiter, authValidators.login, validate, asyncHandler(authController.login));
 
 /**
  * @swagger
@@ -124,7 +125,7 @@ router.post('/login', loginLimiter, authValidators.login, validate, authControll
  *       200:
  *         description: تم تسجيل الخروج
  */
-router.post('/logout', authenticate, requireUser, authController.logout);
+router.post('/logout', authenticate, requireUser, asyncHandler(authController.logout));
 
 /**
  * @swagger
@@ -136,7 +137,7 @@ router.post('/logout', authenticate, requireUser, authController.logout);
  *       201:
  *         description: تم إنشاء جلسة زائر — يرجع guest token
  */
-router.post('/guest', guestLimiter, authValidators.guest, validate, authController.createGuest);
+router.post('/guest', guestLimiter, authValidators.guest, validate, asyncHandler(authController.createGuest));
 
 /**
  * @swagger
@@ -162,7 +163,7 @@ router.post('/guest', guestLimiter, authValidators.guest, validate, authControll
  *       401:
  *         description: غير مصادق
  */
-router.get('/me', authenticate, authController.getCurrentUser);
+router.get('/me', authenticate, asyncHandler(authController.getCurrentUser));
 
 /**
  * @swagger
@@ -182,7 +183,7 @@ router.get('/me', authenticate, authController.getCurrentUser);
  *       404:
  *         description: الرقم غير مسجّل
  */
-router.post('/forgot-password', authValidators.forgotPassword, validate, authController.forgotPassword);
+router.post('/forgot-password', authValidators.forgotPassword, validate, asyncHandler(authController.forgotPassword));
 
 /**
  * @swagger
@@ -202,7 +203,7 @@ router.post('/forgot-password', authValidators.forgotPassword, validate, authCon
  *       400:
  *         description: الكود منتهي أو خاطئ
  */
-router.post('/verify-reset-otp', authValidators.verifyOtp, validate, authController.verifyResetOtp);
+router.post('/verify-reset-otp', authValidators.verifyOtp, validate, asyncHandler(authController.verifyResetOtp));
 
 /**
  * @swagger
@@ -222,6 +223,6 @@ router.post('/verify-reset-otp', authValidators.verifyOtp, validate, authControl
  *       400:
  *         description: OTP غير صحيح
  */
-router.post('/reset-password', authValidators.resetPassword, validate, authController.resetPassword);
+router.post('/reset-password', authValidators.resetPassword, validate, asyncHandler(authController.resetPassword));
 
 module.exports = router;
