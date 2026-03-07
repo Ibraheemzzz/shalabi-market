@@ -3,6 +3,8 @@ const prisma = new PrismaClient();
 const { successResponse, errorResponse, notFoundResponse, createdResponse, serverErrorResponse } = require('../../utils/response');
 const logger = require('../../config/logger');
 
+const DEFAULT_CITY = process.env.DEFAULT_CITY || 'طولكرم';
+
 /**
  * Get all addresses for the logged-in user
  * GET /api/addresses
@@ -53,7 +55,7 @@ const addAddress = async (req, res) => {
                     first_name,
                     last_name: last_name || '',
                     phone_number,
-                    city: 'طولكرم', // Explicitly setting, even though it's default in schema
+                    city: DEFAULT_CITY,
                     region,
                     street,
                     is_default: makeDefault

@@ -191,6 +191,22 @@ npm run test:watch      # Watch mode
 
 Test files: `__tests__/*.test.js`
 
+Manual and ad-hoc scripts are organized under `scripts/`:
+- `scripts/manual-tests/` for API/E2E/manual verification scripts
+- `scripts/diagnostics/` for troubleshooting helpers
+- `scripts/db-maintenance/` for one-off DB fix scripts
+
+Useful script runners:
+- `npm run test:manual:api`
+- `npm run test:manual:modules`
+- `npm run test:manual:limiters`
+- `npm run test:manual:otp`
+- `npm run test:manual:e2e`
+- `npm run test:manual:postman`
+- `npm run diag:guests`
+- `npm run diag:guests:fixed`
+- `npm run diag:guests:pg`
+
 Current coverage: Auth module (register · login · me · security headers · 404)
 
 ---

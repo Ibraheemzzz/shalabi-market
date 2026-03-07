@@ -223,95 +223,106 @@ const addToCart = async (user_id, itemData) => {
  * @returns {Object} Updated item
  */
 const updateCartItem = async (user_id, product_id, quantity) => {
-  // Get cart
-  const cart = await prisma.cart.findUnique({
-    where: { user_id },
-    select: { cart_id: true }
-  });
+  return await prisma.$transaction(async (tx) => {
+    const cart = await tx.cart.findUnique({
+      where: { user_id },
+      select: { cart_id: true }
+    });
 
-  if (!cart) {
-    throw new Error('Cart not found');
-  }
-
-  // Check if item exists in cart
-  const item = await prisma.cartItem.findUnique({
-    where: {
-      cart_id_product_id: {
-        cart_id: cart.cart_id,
-        product_id
-      }
-    },
-    select: {
-      quantity: true,
-      product: {
-        select: {
-          name: true,
-          price: true,
-          sale_type: true,
-          stock_quantity: true
-        }
-      }
+    if (!cart) {
+      throw new Error('Cart not found');
     }
-  });
 
-  if (!item) {
-    throw new Error('Item not found in cart');
-  }
-
-  // If quantity is 0 or less, remove item
-  if (quantity <= 0) {
-    await prisma.cartItem.delete({
+    const item = await tx.cartItem.findUnique({
       where: {
         cart_id_product_id: {
           cart_id: cart.cart_id,
           product_id
         }
+      },
+      select: {
+        quantity: true,
+        product: {
+          select: {
+            name: true,
+            price: true,
+            sale_type: true,
+            stock_quantity: true,
+            is_active: true
+          }
+        }
       }
     });
 
-    // Touch cart updated_at to reflect the removal
-    await prisma.cart.update({
+    if (!item) {
+      throw new Error('Item not found in cart');
+    }
+
+    if (!item.product.is_active) {
+      throw new Error('Product not found or unavailable');
+    }
+
+    // If quantity is 0 or less, remove item atomically.
+    if (quantity <= 0) {
+      await tx.cartItem.delete({
+        where: {
+          cart_id_product_id: {
+            cart_id: cart.cart_id,
+            product_id
+          }
+        }
+      });
+
+      await tx.cart.update({
+        where: { cart_id: cart.cart_id },
+        data: { updated_at: new Date() }
+      });
+
+      return {
+        product_id,
+        removed: true,
+        message: 'Item removed from cart'
+      };
+    }
+
+    // Re-read product stock inside the same transaction.
+    const freshProduct = await tx.product.findFirst({
+      where: { product_id, is_active: true },
+      select: { stock_quantity: true, price: true, name: true, sale_type: true }
+    });
+
+    if (!freshProduct) {
+      throw new Error('Product not found or unavailable');
+    }
+
+    if (quantity > parseFloat(freshProduct.stock_quantity)) {
+      throw new Error(`Insufficient stock. Available: ${freshProduct.stock_quantity} ${freshProduct.sale_type}`);
+    }
+
+    await tx.cartItem.update({
+      where: {
+        cart_id_product_id: {
+          cart_id: cart.cart_id,
+          product_id
+        }
+      },
+      data: { quantity }
+    });
+
+    await tx.cart.update({
       where: { cart_id: cart.cart_id },
       data: { updated_at: new Date() }
     });
 
     return {
       product_id,
-      removed: true,
-      message: 'Item removed from cart'
+      name: freshProduct.name,
+      quantity,
+      price: parseFloat(freshProduct.price),
+      sale_type: freshProduct.sale_type,
+      subtotal: parseFloat((quantity * parseFloat(freshProduct.price)).toFixed(2))
     };
-  }
-
-  // Validate stock
-  if (quantity > parseFloat(item.product.stock_quantity)) {
-    throw new Error(`Insufficient stock. Available: ${item.product.stock_quantity} ${item.product.sale_type}`);
-  }
-
-  // Update quantity
-  await prisma.cartItem.update({
-    where: {
-      cart_id_product_id: {
-        cart_id: cart.cart_id,
-        product_id
-      }
-    },
-    data: { quantity }
   });
-
-  // Touch cart updated_at to reflect latest change
-  await prisma.cart.update({
-    where: { cart_id: cart.cart_id },
-    data: { updated_at: new Date() }
-  });
-
-  return {
-    product_id,
-    name: item.product.name,
-    quantity,
-    price: parseFloat(item.product.price),
-    sale_type: item.product.sale_type,
-    subtotal: parseFloat((quantity * parseFloat(item.product.price)).toFixed(2))
-  };
 };
 
 /**

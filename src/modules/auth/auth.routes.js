@@ -6,7 +6,7 @@ const { authenticate, requireUser } = require('../../middlewares/auth.middleware
 const { validate } = require('../../middlewares/validate.middleware');
 const { asyncHandler } = require('../../middlewares/asyncHandler');
 const authValidators = require('./auth.validators');
-const { loginLimiter, registerLimiter, guestLimiter } = require('../../middlewares/rateLimit.middleware');
+const { loginLimiter, registerLimiter, otpLimiter, guestLimiter } = require('../../middlewares/rateLimit.middleware');
 
 /**
  * @swagger
@@ -28,7 +28,7 @@ const { loginLimiter, registerLimiter, guestLimiter } = require('../../middlewar
  *       429:
  *         description: طلبات كثيرة
  */
-router.post('/register', registerLimiter, authValidators.register, validate, asyncHandler(authController.register));
+router.post('/register', registerLimiter, otpLimiter, authValidators.register, validate, asyncHandler(authController.register));
 
 /**
  * @swagger
@@ -66,7 +66,7 @@ router.post('/verify-otp', authValidators.verifyOtp, validate, asyncHandler(auth
  *       200:
  *         description: تم إرسال الرمز
  */
-router.post('/resend-otp', authValidators.resendOtp, validate, asyncHandler(authController.resendOtp));
+router.post('/resend-otp', otpLimiter, authValidators.resendOtp, validate, asyncHandler(authController.resendOtp));
 
 /**
  * @swagger
@@ -89,7 +89,7 @@ router.post('/resend-otp', authValidators.resendOtp, validate, asyncHandler(auth
  *       404:
  *         description: الرقم غير مسجّل
  */
-router.post('/check-phone', authValidators.checkPhone, validate, asyncHandler(authController.checkPhone));
+router.post('/check-phone', otpLimiter, authValidators.checkPhone, validate, asyncHandler(authController.checkPhone));
 
 /**
  * @swagger
@@ -183,7 +183,7 @@ router.get('/me', authenticate, asyncHandler(authController.getCurrentUser));
  *       404:
  *         description: الرقم غير مسجّل
  */
-router.post('/forgot-password', authValidators.forgotPassword, validate, asyncHandler(authController.forgotPassword));
+router.post('/forgot-password', otpLimiter, authValidators.forgotPassword, validate, asyncHandler(authController.forgotPassword));
 
 /**
  * @swagger

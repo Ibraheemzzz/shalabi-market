@@ -362,6 +362,8 @@ model ProductReview {
   product Product @relation(fields: [product_id], references: [product_id], onDelete: Cascade)
 
   @@unique([user_id, product_id])
+  @@index([product_id])
+  @@index([user_id])
   @@map("product_reviews")
 }
 

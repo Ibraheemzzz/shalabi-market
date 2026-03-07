@@ -1,6 +1,8 @@
 const prisma = require('../../config/prisma');
 const { buildPaginatedResponse, safePaginate } = require('../../utils/pagination');
 
+const DEFAULT_CITY = process.env.DEFAULT_CITY || 'طولكرم';
+
 /**
  * Orders Service
  * Handles all order-related database operations
@@ -24,6 +26,10 @@ const placeOrder = async (orderData) => {
   // Validate items
   if (!items || items.length === 0) {
     throw new Error('Order must contain at least one item');
+  }
+
+  if (guest_id && !orderData.phone_number) {
+    throw new Error('Phone number is required for guest orders');
   }
 
   // ── Guest phone resolution ─────────────────────────────────
@@ -136,7 +142,7 @@ const placeOrder = async (orderData) => {
       shippingDetails = {
         shipping_first_name: address.first_name,
         shipping_last_name: address.last_name,
-        shipping_city: address.city || 'طولكرم',
+        shipping_city: address.city || DEFAULT_CITY,
         shipping_region: address.region,
         shipping_street: address.street,
         shipping_phone: address.phone_number
@@ -146,7 +152,7 @@ const placeOrder = async (orderData) => {
       shippingDetails = {
         shipping_first_name: orderData.first_name,
         shipping_last_name: orderData.last_name,
-        shipping_city: 'طولكرم', // Default fixed city
+        shipping_city: DEFAULT_CITY,
         shipping_region: orderData.region,
         shipping_street: orderData.street,
         shipping_phone: orderData.phone_number
@@ -643,7 +649,6 @@ const changeOrderStatus = async (order_id, new_status) => {
     // Validate status transition
     const transitions = {
       'Created': ['Confirmed', 'Shipped', 'Cancelled'],
-      'Pending': ['Confirmed', 'Shipped', 'Cancelled'], // In case Pending is used
       'Confirmed': ['Shipped', 'Cancelled'],
       'Shipped': ['Delivered', 'Cancelled'],
       'Delivered': [],
@@ -912,12 +917,9 @@ const getGuestInvoiceByPhone = async (order_id, phone_number) => {
     throw new Error('Order not found');
   }
 
-  // Verify phone number (check shipping phone, user phone, or guest phone)
-  const isPhoneMatch = (
-    order.shipping_phone === phone_number ||
-    order.user?.phone_number === phone_number ||
-    order.guest?.phone_number === phone_number
-  );
+  // Verify against shipping phone only.
+  // This keeps guest invoice access bound to the checkout contact number.
+  const isPhoneMatch = order.shipping_phone === phone_number;
 
   if (!isPhoneMatch) {
     throw new Error('Order not found'); // Keep error generic for security

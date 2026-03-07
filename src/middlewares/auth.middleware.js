@@ -138,8 +138,8 @@ const requireAdmin = (req, res, next) => {
     return unauthorizedResponse(res, 'Authentication required');
   }
 
-  if (req.user.role !== 'SuperAdmin') {
-    return forbiddenResponse(res, 'SuperAdmin access required');
+  if (req.user.role !== 'Admin' && req.user.role !== 'SuperAdmin') {
+    return forbiddenResponse(res, 'Admin access required');
   }
 
   next();

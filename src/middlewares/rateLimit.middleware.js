@@ -37,6 +37,20 @@ const registerLimiter = rateLimit({
   )
 });
 
+const otpMax = Number(process.env.OTP_RATE_LIMIT_MAX) || 5;
+
+// ─── OTP Request Limiter ─────────────────────────────────────────────────────
+// Protects OTP-generating endpoints from SMS abuse and brute-force workflows.
+const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: otpMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler(
+    'Too many OTP requests. Please try again later.'
+  )
+});
+
 // ─── General API Limiter ──────────────────────────────────────────────────────
 // Generous limit for normal API usage
 const apiLimiter = rateLimit({
@@ -76,6 +90,7 @@ const guestLimiter = rateLimit({
 module.exports = {
   loginLimiter,
   registerLimiter,
+  otpLimiter,
   apiLimiter,
   uploadLimiter,
   guestLimiter

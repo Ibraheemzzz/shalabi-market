@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../../config/prisma');
 const { buildPaginatedResponse, safePaginate } = require('../../utils/pagination');
 const smsService = require('../../utils/sms');
+const { clearPermissionCache } = require('../../middlewares/auth.middleware');
 
 /**
  * Users Service
@@ -375,6 +376,9 @@ const changeUserRole = async (user_id, new_role) => {
     data: { role: new_role },
     select: { user_id: true, name: true, role: true, phone_number: true }
   });
+
+  clearPermissionCache(user.role);
+  clearPermissionCache(new_role);
 
   return updated;
 };
